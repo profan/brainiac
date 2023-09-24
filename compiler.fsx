@@ -1,5 +1,7 @@
 // #r "nuget: Lokad.ILPack, 0.2.0"
 
+exception MismatchedBrackets of string
+
 /// Basic language, directly represents the brainfuck AST.
 type Instruction = 
     | Add
@@ -212,7 +214,7 @@ let executeProgram contents =
                 | RightBracket::_ when counter = 0 -> currentOffset
                 | RightBracket::xs -> findMatchingOffset(xs, currentOffset + 1, counter + 1)
                 | _::xs -> findMatchingOffset(xs, currentOffset + 1, counter)
-                | [] -> -1
+                | [] -> raise (MismatchedBrackets("found mismatched brackets, can not compile program!"))
             
             findMatchingOffset(instructions, 0, 1)
 
