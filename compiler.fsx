@@ -150,6 +150,10 @@ let optimizeProgram contents =
     tokenizeContent (contents)
     |> optimizeInstructions
 
+let optimizeProgramInFile path =
+    let contents = readAllText path in
+        optimizeProgram contents
+
 open System
 open System.Reflection
 open System.Reflection.Emit
