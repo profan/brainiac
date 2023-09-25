@@ -1,5 +1,9 @@
 // #r "nuget: Lokad.ILPack, 0.2.0"
 
+open System
+open System.Reflection
+open System.Reflection.Emit
+
 exception MismatchedBrackets of string
 
 /// Basic language, directly represents the brainfuck AST.
@@ -27,11 +31,7 @@ type Instruction' =
     | RightBracket
     | Dump
 
-/// Which mode the program is running in, batch or repl operation.
-type Mode =
-    | Batch
-    | Repl
-
+/// Reads all the text in the file, returning it as a string.
 let readAllText filePath = System.IO.File.ReadAllText(filePath)
 
 /// Transforms a given input character to the matching brainfuck instruction, if any.
@@ -153,10 +153,6 @@ let optimizeProgram contents =
 let optimizeProgramInFile path =
     let contents = readAllText path in
         optimizeProgram contents
-
-open System
-open System.Reflection
-open System.Reflection.Emit
 
 let createDynamicAssemblyWithMethodBuilder (assemblyName : string, moduleName: string, typeName: string, methodName: string) =
 
@@ -392,6 +388,7 @@ let executeProgram contents =
 
     compiledProgramFunction ()
 
+/// Executes the program in the file at the path.
 let executeProgramInFile path =
     let contents = readAllText path in
         executeProgram contents
