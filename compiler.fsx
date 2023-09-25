@@ -189,17 +189,17 @@ type Scope = {
 type CompilationContext = {
     Current: int // what instruction are we currently dealing with in our instruction stream
     Scopes: list<Scope> // a list of scopes for the conditional jumps in brainfuck, with associated IL labels and offsets for each into the original non-IL instruction stream
+    StackPointerOffset: int // local index on the stack where the stack pointer lives
+    MemoryStackOffset: int // local index on the stack where the memory array lives
 }
 
 let executeProgram contents =
 
     let memorySize: int = 65536;
-    let memoryStackOffset: int = 0;
     let memoryArrayType: Type = typeof<array<byte>>
     let memoryType: Type = typeof<byte>
 
     let stackPointerValue: int = 0;
-    let stackPointerOffset: int = 1;
     let stackPointerType: Type = typeof<int>
 
     let optimizedProgram = optimizeProgram(contents)
@@ -228,78 +228,86 @@ let executeProgram contents =
             | [] ->
                 ctx
 
-        // emit definitions for all of our labels
-        let compilationContext: CompilationContext = compileBrackets (generator, { Current = 0; Scopes = [] }, instructions)
-
         // emit definitions for our two locals, must be declared upfront
-        // #FIXME: this is kinda hacky, maybe we should save this information in the compilation context instead of hardcoding the offsets?
-        let _ = generator.DeclareLocal(memoryArrayType)
-        let _ = generator.DeclareLocal(stackPointerType)
+        let memory = generator.DeclareLocal(memoryArrayType)
+        let stack = generator.DeclareLocal(stackPointerType)
+
+        // emit definitions for all of our labels
+        let ctx: CompilationContext = compileBrackets (
+            generator,
+            {
+                Current = 0;
+                Scopes = [];
+                StackPointerOffset = stack.LocalIndex;
+                MemoryStackOffset = memory.LocalIndex
+            },
+            instructions
+        )
 
         // emit something like:
         // int[] memory = new int[memorySize];
         // on the stack at index 0  
         generator.Emit(OpCodes.Ldc_I4, memorySize)
         generator.Emit(OpCodes.Newarr, memoryType)
-        generator.Emit(OpCodes.Stloc, memoryStackOffset)
+        generator.Emit(OpCodes.Stloc, ctx.MemoryStackOffset)
 
         // create our "stack pointer"
         generator.Emit(OpCodes.Ldc_I4, stackPointerValue)
-        generator.Emit(OpCodes.Stloc, stackPointerOffset)
+        generator.Emit(OpCodes.Stloc, ctx.StackPointerOffset)
 
-        { compilationContext with Current = 0 }
+        { ctx with Current = 0 }
     
-    let compileAdd (generator: ILGenerator, value: int) =
+    let compileAdd (generator: ILGenerator, ctx: CompilationContext, value: int) =
         // emit memory[stackPointerOffset] = memory[stackPointerOffset] + value;
-        generator.Emit(OpCodes.Ldloc, memoryStackOffset)
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
-        generator.Emit(OpCodes.Ldloc, memoryStackOffset)
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
         generator.Emit(OpCodes.Ldelem_U1)
         generator.Emit(OpCodes.Ldc_I4, value)
         generator.Emit(OpCodes.Add)
         generator.Emit(OpCodes.Conv_U1)
         generator.Emit(OpCodes.Stelem_I1)
 
-    let compileSub (generator: ILGenerator, value: int) =
+    let compileSub (generator: ILGenerator, ctx: CompilationContext, value: int) =
         // emit memory[stackPointerOffset] = memory[stackPointerOffset] - value;
-        generator.Emit(OpCodes.Ldloc, memoryStackOffset)
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
-        generator.Emit(OpCodes.Ldloc, memoryStackOffset)
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
         generator.Emit(OpCodes.Ldelem_U1)
         generator.Emit(OpCodes.Ldc_I4, value)
         generator.Emit(OpCodes.Sub)
         generator.Emit(OpCodes.Conv_U1)
         generator.Emit(OpCodes.Stelem_I1)
     
-    let compilePtrLeft (generator: ILGenerator, value: int) =
+    let compilePtrLeft (generator: ILGenerator, ctx: CompilationContext, value: int) =
         // emit stackPointerOffset -= value;
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
         generator.Emit(OpCodes.Ldc_I4, value)
         generator.Emit(OpCodes.Sub)
-        generator.Emit(OpCodes.Stloc, stackPointerOffset)
+        generator.Emit(OpCodes.Stloc, ctx.StackPointerOffset)
 
-    let compilePtrRight (generator: ILGenerator, value: int) =
+    let compilePtrRight (generator: ILGenerator, ctx: CompilationContext, value: int) =
         // emit stackPointerOffset += value;
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
         generator.Emit(OpCodes.Ldc_I4, value)
         generator.Emit(OpCodes.Add)
-        generator.Emit(OpCodes.Stloc, stackPointerOffset)
+        generator.Emit(OpCodes.Stloc, ctx.StackPointerOffset)
     
-    let compileSet (generator: ILGenerator, value: int) =
+    let compileSet (generator: ILGenerator, ctx: CompilationContext, value: int) =
         // emit memory[stackPointerOffset] = value;
-        generator.Emit(OpCodes.Ldloc, memoryStackOffset)
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
         generator.Emit(OpCodes.Ldc_I4, value)
         generator.Emit(OpCodes.Stelem_I1)
 
-    let compileOutput (generator: ILGenerator) =
+    let compileOutput (generator: ILGenerator, ctx: CompilationContext) =
         let writeParams = [|typeof<char>|]
         let writeMethodInfo = typeof<Console>.GetMethod("Write", writeParams)
         // emit Console.Write(memory[stackPointerOffset])
-        generator.Emit(OpCodes.Ldloc, memoryStackOffset)
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
         generator.Emit(OpCodes.Ldelem_U1)
         generator.EmitCall(OpCodes.Call, writeMethodInfo, null)
         generator.Emit(OpCodes.Nop) // #FIXME: uhh
@@ -310,8 +318,8 @@ let executeProgram contents =
         let (startLabel, _) = scope.Start
         let (targetLabel, _) = scope.End
 
-        generator.Emit(OpCodes.Ldloc, memoryStackOffset)
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
         
         // jump if current memory cell is zero, otherwise we do nothing
         generator.Emit(OpCodes.Ldelem_U1)
@@ -326,8 +334,8 @@ let executeProgram contents =
         let (endLabel, _) = scope.End
         let (startLabel, _) = scope.Start
 
-        generator.Emit(OpCodes.Ldloc, memoryStackOffset)
-        generator.Emit(OpCodes.Ldloc, stackPointerOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
 
         // jump back if current memory cell is nonzero, otherwise we do nothing
         generator.Emit(OpCodes.Ldelem_U1)
@@ -339,24 +347,24 @@ let executeProgram contents =
     let rec compile (generator : ILGenerator, ctx: CompilationContext, instructions: list<Instruction'>) =
         match instructions with
         | Add(v)::xs ->
-            compileAdd (generator, v);
+            compileAdd (generator, ctx, v);
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | Sub(v)::xs ->
-            compileSub (generator, v);
+            compileSub (generator, ctx, v);
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | PtrLeft(v)::xs ->
-            compilePtrLeft(generator, v)
+            compilePtrLeft(generator, ctx, v)
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | PtrRight(v)::xs ->
-            compilePtrRight(generator, v)
+            compilePtrRight(generator, ctx, v)
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | Set(v)::xs ->
-            compileSet(generator, v)
+            compileSet(generator, ctx, v)
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | Input::xs ->
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | Output::xs ->
-            compileOutput(generator)
+            compileOutput(generator, ctx)
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | LeftBracket::xs ->
             compileLeftBracket(generator, ctx)
