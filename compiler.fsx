@@ -1,10 +1,28 @@
-// #r "nuget: Lokad.ILPack, 0.2.0"
+#r "nuget: CommandLineParser.FSharp, 2.9.1"
+#r "nuget: Lokad.ILPack, 0.2.0"
 
 open System
 open System.Reflection
 open System.Reflection.Emit
+open System.Collections.Generic
+open System.IO
+
+open Lokad.ILPack
+open CommandLine
+
+[<CLIMutable>] // #HACK: this is extremely cursed, curse you .NET
+type Options = {
+
+  [<Option('f', "file", Required = false, HelpText = "Input file.", SetName = "file")>] file : string option;
+  [<Option('i', "input", Required = false, HelpText = "Input program.", SetName = "program")>] program: string option;
+  
+  [<Option('b', "build", Required = false, Default = false, HelpText = "Output a compiled version of the input program, instead of executing directly.")>] build : bool; 
+  [<Option('o', "output", Required = false, HelpText = "Output program assembly name, if not set, will use the name of the input program (or otherwise Output.dll)")>] output: string option;
+
+}
 
 exception MismatchedBrackets of string
+exception InvalidOptionsException of string
 
 /// Basic language, directly represents the brainfuck AST.
 type Instruction = 
@@ -156,8 +174,6 @@ let optimizeProgramInFile path =
 
 let createDynamicAssemblyWithMethodBuilder (assemblyName : string, moduleName: string, typeName: string, methodName: string) =
 
-    // #FIXME: figure out how we're gonna save the assembly
-
     let assemblyName : AssemblyName = new AssemblyName(assemblyName)
     let assemblyBuilder : AssemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.Run)
     let moduleBuilder : ModuleBuilder = assemblyBuilder.DefineDynamicModule(moduleName)
@@ -167,18 +183,24 @@ let createDynamicAssemblyWithMethodBuilder (assemblyName : string, moduleName: s
 
     (assemblyBuilder, methodBuilder,  typeBuilder)
 
-let emitAssemblyWithStaticMethod (assemblyName : string, moduleName: string, typeName: string, methodName: string, emitter: ILGenerator -> unit) : unit -> unit =
+let emitAssembly (assemblyName : string, moduleName: string, typeName: string, methodName: string, emitter: ILGenerator -> unit) : Assembly * Type =
 
-    let (_, methodBuilder, typeBuilder) = createDynamicAssemblyWithMethodBuilder(assemblyName, moduleName, typeName, methodName)
+    let (assemblyBuilder, methodBuilder, typeBuilder) = createDynamicAssemblyWithMethodBuilder(assemblyName, moduleName, typeName, methodName)
     
     let ilGenerator : ILGenerator = methodBuilder.GetILGenerator()
     emitter ilGenerator
     
     let newType = typeBuilder.CreateType()
-    // let generator = Lokad.ILPack.AssemblyGenerator();
-    // generator.GenerateAssembly(assembly, "Brainiac.dll");
+    (assemblyBuilder, newType)
 
-    fun () -> ignore (newType.GetMethod("Main").Invoke(null, null)); ()
+let writeAssemblyToFile (assembly: Assembly, outputName: string) : unit =
+
+    let generator = AssemblyGenerator();
+    generator.GenerateAssembly(assembly, outputName);
+
+let executeProgramInAssembly (mainType: Type) : unit =
+
+    (fun () -> ignore (mainType.GetMethod("Main").Invoke(null, null))) ()
 
 /// Defines the offsets for a given [] pair
 type Scope = {
@@ -193,8 +215,7 @@ type CompilationContext = {
     MemoryStackOffset: int // local index on the stack where the memory array lives
 }
 
-/// Executes the brainfuck program in the passed string.
-let executeProgram contents =
+let buildProgramToAssembly contents =
 
     let memorySize: int = 65536;
     let memoryArrayType: Type = typeof<array<byte>>
@@ -377,7 +398,7 @@ let executeProgram contents =
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | [] -> generator.Emit(OpCodes.Ret)
 
-    let compiledProgramFunction = emitAssemblyWithStaticMethod(
+    let (compiledAssembly, compiledType) = emitAssembly(
         "BrainiacAssembly",
         "BrainiacModule",
         "BrainiacMain",
@@ -387,9 +408,54 @@ let executeProgram contents =
                 compile (g, ctx,  optimizedProgram)
     )
 
-    compiledProgramFunction ()
+    (compiledAssembly, compiledType)
+
+/// Executes the brainfuck program in the passed string.
+let executeProgram contents =
+    let (_, t) = buildProgramToAssembly contents in
+        executeProgramInAssembly t
 
 /// Executes the brainfuck program in the file at the path.
 let executeProgramInFile path =
     let contents = readAllText path in
-        executeProgram contents
+        let (_, t) = buildProgramToAssembly contents in
+            executeProgramInAssembly t
+
+/// Returns the string in title case, in our case we use it just for assembly names.
+let asTitleCase str =
+    System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase str
+
+/// Builds the brainfuck program in the file at the path.
+let buildProgramInFile (path, outputAssembly) =
+    let contents = readAllText path in
+        let (program, _) = buildProgramToAssembly contents in
+            let outputName = Option.defaultValue (asTitleCase (Path.GetFileNameWithoutExtension path) + ".dll") outputAssembly
+            writeAssemblyToFile (program, outputName)
+
+/// Builds the brainfuck program passed as a string.
+let buildProgram (contents, outputAssembly) =
+    let (program, _) = buildProgramToAssembly contents in
+        let outputName = Option.defaultValue "Output.dll" outputAssembly
+        writeAssemblyToFile (program, outputName)
+
+/// Handles any potential argument parsing errors.
+let fail (errors : IEnumerable<Error>) =
+    for e in errors do
+        printfn "error: %s" (e.ToString())
+    1 // nonzero return as to indicate error
+
+let main argv =
+    let result = Parser.Default.ParseArguments<Options> argv
+    match result with
+    | :? CommandLine.Parsed<Options> as parsed ->
+        match (parsed.Value.file, parsed.Value.program, parsed.Value.build) with
+        | (Some path, None, false) -> executeProgramInFile(path); 0
+        | (Some path, None, true) -> buildProgramInFile(path, parsed.Value.output); 0
+        | (None, Some program, false) -> executeProgram(program); 0
+        | (None, Some program, true) -> buildProgram(program, parsed.Value.output); 0
+        | (Some _, Some _, _) -> raise (InvalidOptionsException("brainiac: can not specify both file path and input program, must use one or the other!"))
+        | (None, None, _) -> raise (InvalidOptionsException("brainiac: did not specify either input file path with: -f some_file.bf or input program with: -i '++++.', please specify one! use the --help!"))
+    | :? CommandLine.NotParsed<Options> as notParsed -> fail notParsed.Errors
+    | _ -> 1 // nonzero return as to indicate error
+
+main fsi.CommandLineArgs
