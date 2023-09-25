@@ -1,6 +1,3 @@
-#r "nuget: CommandLineParser.FSharp, 2.9.1"
-#r "nuget: Lokad.ILPack, 0.2.0"
-
 open System
 open System.Reflection
 open System.Reflection.Emit
@@ -13,8 +10,8 @@ open CommandLine
 [<CLIMutable>] // #HACK: this is extremely cursed, curse you .NET
 type Options = {
 
-  [<Option('f', "file", Required = false, HelpText = "Input file.", SetName = "file")>] file : string option;
-  [<Option('i', "input", Required = false, HelpText = "Input program.", SetName = "program")>] program: string option;
+  [<Option('f', "file", Required = true, HelpText = "Input file.", SetName = "file")>] file : string option;
+  [<Option('i', "input", Required = true, HelpText = "Input program.", SetName = "program")>] program: string option;
   
   [<Option('b', "build", Required = false, Default = false, HelpText = "Output a compiled version of the input program, instead of executing directly.")>] build : bool; 
   [<Option('o', "output", Required = false, HelpText = "Output program assembly name, if not set, will use the name of the input program (or otherwise Output.dll)")>] output: string option;
@@ -444,6 +441,7 @@ let fail (errors : IEnumerable<Error>) =
         printfn "error: %s" (e.ToString())
     1 // nonzero return as to indicate error
 
+[<EntryPoint>]
 let main argv =
     let result = Parser.Default.ParseArguments<Options> argv
     match result with
@@ -457,5 +455,3 @@ let main argv =
         | (None, None, _) -> raise (InvalidOptionsException("brainiac: did not specify either input file path with: -f some_file.bf or input program with: -i '++++.', please specify one! use the --help!"))
     | :? CommandLine.NotParsed<Options> as notParsed -> fail notParsed.Errors
     | _ -> 1 // nonzero return as to indicate error
-
-main fsi.CommandLineArgs
