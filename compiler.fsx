@@ -156,8 +156,10 @@ open System.Reflection.Emit
 
 let createDynamicAssemblyWithMethodBuilder (assemblyName : string, moduleName: string, typeName: string, methodName: string) =
 
+    // #FIXME: figure out how we're gonna save the assembly
+
     let assemblyName : AssemblyName = new AssemblyName(assemblyName)
-    let assemblyBuilder : AssemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.Run) // #FIXME: figure out how we're gonna save the assembly
+    let assemblyBuilder : AssemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.Run)
     let moduleBuilder : ModuleBuilder = assemblyBuilder.DefineDynamicModule(moduleName)
     let typeBuilder : TypeBuilder = moduleBuilder.DefineType(typeName, TypeAttributes.Public)
     let methodBuilder : MethodBuilder = typeBuilder.DefineMethod(methodName, MethodAttributes.Public ||| MethodAttributes.Static, null, null)
@@ -167,14 +169,12 @@ let createDynamicAssemblyWithMethodBuilder (assemblyName : string, moduleName: s
 
 let emitAssemblyWithStaticMethod (assemblyName : string, moduleName: string, typeName: string, methodName: string, emitter: ILGenerator -> unit) : unit -> unit =
 
-    let (assemblyBuilder, methodBuilder, typeBuilder) = createDynamicAssemblyWithMethodBuilder(assemblyName, moduleName, typeName, methodName)
+    let (_, methodBuilder, typeBuilder) = createDynamicAssemblyWithMethodBuilder(assemblyName, moduleName, typeName, methodName)
     
     let ilGenerator : ILGenerator = methodBuilder.GetILGenerator()
     emitter ilGenerator
     
     let newType = typeBuilder.CreateType()
-    let assembly : Assembly = assemblyBuilder;
-
     // let generator = Lokad.ILPack.AssemblyGenerator();
     // generator.GenerateAssembly(assembly, "Brainiac.dll");
 
@@ -188,7 +188,7 @@ type Scope = {
 
 type CompilationContext = {
     Current: int // what instruction are we currently dealing with in our instruction stream
-    Scopes: list<Scope> // a list of scopes for the conditional jumps in brainfuck, with associated IL labels and offsets for each into the original non-IL instruction stream
+    Scopes: list<Scope> // a list of scopes for the conditional jumps, with associated created labels and offsets for each into the original instruction stream
     StackPointerOffset: int // local index on the stack where the stack pointer lives
     MemoryStackOffset: int // local index on the stack where the memory array lives
 }
@@ -244,14 +244,14 @@ let executeProgram contents =
             instructions
         )
 
-        // emit something like:
+        // create something like:
         // int[] memory = new int[memorySize];
-        // on the stack at index 0  
+        // on the stack at the index previously declared
         generator.Emit(OpCodes.Ldc_I4, memorySize)
         generator.Emit(OpCodes.Newarr, memoryType)
         generator.Emit(OpCodes.Stloc, ctx.MemoryStackOffset)
 
-        // create our "stack pointer"
+        // push 0 onto the stack for our "stack pointer"
         generator.Emit(OpCodes.Ldc_I4, stackPointerValue)
         generator.Emit(OpCodes.Stloc, ctx.StackPointerOffset)
 
