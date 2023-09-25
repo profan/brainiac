@@ -193,6 +193,7 @@ type CompilationContext = {
     MemoryStackOffset: int // local index on the stack where the memory array lives
 }
 
+/// Executes the brainfuck program in the passed string.
 let executeProgram contents =
 
     let memorySize: int = 65536;
