@@ -205,6 +205,7 @@ type Scope = {
     End: Label * int
 }
 
+/// Holds the current compilation context.
 type CompilationContext = {
     Current: int // what instruction are we currently dealing with in our instruction stream
     Scopes: list<Scope> // a list of scopes for the conditional jumps, with associated created labels and offsets for each into the original instruction stream
@@ -212,6 +213,7 @@ type CompilationContext = {
     MemoryStackOffset: int // local index on the stack where the memory array lives
 }
 
+/// Builds the program passed in the string to a dynamic assembly.
 let buildProgramToAssembly contents =
 
     let memorySize: int = 65536;
