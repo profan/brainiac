@@ -13,9 +13,9 @@ Some simple optimizations are also applied in the process, some of which are the
 # Compilation Details
 * Compiles the executed brainfuck to .NET IL, executing by invoking a method generated in the dynamic assembly.
 * Optimizes a few common brainfuck patterns to more specific instructions before compiling to .NET IL, such as:
- * \>\>\>, ++++, etc.. optimizes continuous sequences of ptr mov/arithmetic into single operations
- * [-] (which is equal to set current cell to zero) to a direct set to zero
- * cleans up obviously no-op operations
+  * \>\>\>, ++++, etc.. optimizes continuous sequences of ptr mov/arithmetic into single operations
+  * [-] (which is equal to set current cell to zero) to a direct set to zero
+  * cleans up obviously no-op operations
 
 # License
 See attached LICENSE file.
