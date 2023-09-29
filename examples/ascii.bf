@@ -1,6 +1,6 @@
 this program prints out all the printable ascii characters (each separated by a space)
 
-we want to step through all of ascii from 32 to 128 so write 128 into the first cell and leave pointer on cell 2
+we want to step through all of ascii from 32 to 128 so write 127 into the first cell and leave pointer on cell 2
 >++++++++[-<++++++++++++++++>]<->
 
 and then write 32 into the second cell and leave pointer on cell 2
