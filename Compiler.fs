@@ -1,7 +1,6 @@
 open System
 open System.Reflection
 open System.Reflection.Emit
-open System.Collections.Generic
 open System.Diagnostics.CodeAnalysis
 open System.Globalization
 open System.Threading
@@ -440,12 +439,6 @@ let buildProgram (contents, outputAssembly) =
         let outputName = Option.defaultValue "Output.dll" outputAssembly
         writeAssemblyToFile (program, outputName)
 
-/// Handles any potential argument parsing errors.
-let fail (errors : IEnumerable<Error>) =
-    for e in errors do
-        printfn "error: %s" (e.ToString())
-    1 // nonzero return as to indicate error
-
 /// Hack around the fact that the command line parser may break on a non-US culture like turkish.
 let fixCulture() : unit =
     let _ = Thread.CurrentThread.CurrentCulture = CultureInfo("en-US")
@@ -465,5 +458,4 @@ let main argv =
         | (None, Some program, true) -> buildProgram(program, parsed.Value.Output); 0
         | (Some _, Some _, _) -> raise (InvalidOptionsException("brainiac: can not specify both file path and input program, must use one or the other!"))
         | (None, None, _) -> raise (InvalidOptionsException("brainiac: did not specify either input file path with: -f some_file.bf or input program with: -i '++++.', please specify one! use the --help!"))
-    | :? CommandLine.NotParsed<Options> as notParsed -> fail notParsed.Errors
     | _ -> 1 // nonzero return as to indicate error
