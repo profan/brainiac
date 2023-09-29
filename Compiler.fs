@@ -447,7 +447,7 @@ let fixCulture() : unit =
 [<EntryPoint>]
 [<DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof<Options>)>] // #HACK: this way, when trimming the output binary we don't remove stuff we need to dynamically access on our CLI options type
 let main argv =
-    fixCulture
+    fixCulture()
     let result = Parser.Default.ParseArguments<Options> argv
     match result with
     | :? CommandLine.Parsed<Options> as parsed ->
