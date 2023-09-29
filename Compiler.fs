@@ -2,6 +2,9 @@ open System
 open System.Reflection
 open System.Reflection.Emit
 open System.Collections.Generic
+open System.Diagnostics.CodeAnalysis
+open System.Globalization
+open System.Threading
 open System.IO
 
 open Lokad.ILPack
@@ -10,11 +13,11 @@ open CommandLine
 [<CLIMutable>] // #HACK: this is extremely cursed, curse you .NET
 type Options = {
 
-  [<Option('f', "file", Required = true, HelpText = "Input file.", SetName = "file")>] file : string option;
-  [<Option('i', "input", Required = true, HelpText = "Input program.", SetName = "program")>] program: string option;
+  [<Option('f', "file", Required = true, HelpText = "Input file.", SetName = "file")>] File : string option;
+  [<Option('i', "input", Required = true, HelpText = "Input program.", SetName = "program")>] Program: string option;
   
-  [<Option('b', "build", Required = false, Default = false, HelpText = "Output a compiled version of the input program, instead of executing directly.")>] build : bool; 
-  [<Option('o', "output", Required = false, HelpText = "Output program assembly name, if not set, will use the name of the input program (or otherwise Output.dll)")>] output: string option;
+  [<Option('b', "build", Required = false, Default = false, HelpText = "Output a compiled version of the input program, instead of executing directly.")>] Build : bool; 
+  [<Option('o', "output", Required = false, HelpText = "Output program assembly name, if not set, will use the name of the input program (or otherwise Output.dll)")>] Output: string option;
 
 }
 
@@ -443,16 +446,23 @@ let fail (errors : IEnumerable<Error>) =
         printfn "error: %s" (e.ToString())
     1 // nonzero return as to indicate error
 
+/// Hack around the fact that the command line parser may break on a non-US culture like turkish.
+let fixCulture() : unit =
+    let _ = Thread.CurrentThread.CurrentCulture = CultureInfo("en-US")
+    ()
+
 [<EntryPoint>]
+[<DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof<Options>)>] // #HACK: this way, when trimming the output binary we don't remove stuff we need to dynamically access on our CLI options type
 let main argv =
+    fixCulture
     let result = Parser.Default.ParseArguments<Options> argv
     match result with
     | :? CommandLine.Parsed<Options> as parsed ->
-        match (parsed.Value.file, parsed.Value.program, parsed.Value.build) with
+        match (parsed.Value.File, parsed.Value.Program, parsed.Value.Build) with
         | (Some path, None, false) -> executeProgramInFile(path); 0
-        | (Some path, None, true) -> buildProgramInFile(path, parsed.Value.output); 0
+        | (Some path, None, true) -> buildProgramInFile(path, parsed.Value.Output); 0
         | (None, Some program, false) -> executeProgram(program); 0
-        | (None, Some program, true) -> buildProgram(program, parsed.Value.output); 0
+        | (None, Some program, true) -> buildProgram(program, parsed.Value.Output); 0
         | (Some _, Some _, _) -> raise (InvalidOptionsException("brainiac: can not specify both file path and input program, must use one or the other!"))
         | (None, None, _) -> raise (InvalidOptionsException("brainiac: did not specify either input file path with: -f some_file.bf or input program with: -i '++++.', please specify one! use the --help!"))
     | :? CommandLine.NotParsed<Options> as notParsed -> fail notParsed.Errors
