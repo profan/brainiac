@@ -17,6 +17,7 @@ type Options = {
   
   [<Option('b', "build", Required = false, Default = false, HelpText = "Output a compiled version of the input program, instead of executing directly.")>] Build : bool; 
   [<Option('o', "output", Required = false, HelpText = "Output program assembly name, if not set, will use the name of the input program (or otherwise Output.dll)")>] Output: string option;
+  [<Option('d', "debug", Required = false, Default = false, HelpText = "Output values of cells as their numeric values instead of as ASCII, useful for debugging!")>] Debug: bool;
 
 }
 
@@ -216,7 +217,7 @@ type CompilationContext = {
 }
 
 /// Builds the program passed in the string to a dynamic assembly.
-let buildProgramToAssembly contents =
+let buildProgramToAssembly (contents, debug) =
 
     let memorySize: int = 65536;
     let memoryArrayType: Type = typeof<array<byte>>
@@ -326,7 +327,7 @@ let buildProgramToAssembly contents =
         generator.Emit(OpCodes.Stelem_I1)
 
     let compileOutput (generator: ILGenerator, ctx: CompilationContext) =
-        let writeParams = [|typeof<char>|]
+        let writeParams = if debug then [|typeof<int>|] else [|typeof<char>|]
         let writeMethodInfo = typeof<Console>.GetMethod("Write", writeParams)
         // emit Console.Write(memory[stackPointerOffset])
         generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
@@ -412,14 +413,14 @@ let buildProgramToAssembly contents =
     (compiledAssembly, compiledType)
 
 /// Executes the brainfuck program in the passed string.
-let executeProgram contents =
-    let (_, t) = buildProgramToAssembly contents in
+let executeProgram (contents, debug) =
+    let (_, t) = buildProgramToAssembly (contents, debug) in
         executeProgramInAssembly t
 
 /// Executes the brainfuck program in the file at the path.
-let executeProgramInFile path =
+let executeProgramInFile (path, debug) =
     let contents = readAllText path in
-        let (_, t) = buildProgramToAssembly contents in
+        let (_, t) = buildProgramToAssembly (contents, debug) in
             executeProgramInAssembly t
 
 /// Returns the string in title case, in our case we use it just for assembly names.
@@ -427,15 +428,15 @@ let asTitleCase str =
     System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase str
 
 /// Builds the brainfuck program in the file at the path.
-let buildProgramInFile (path, outputAssembly) =
+let buildProgramInFile (path, debug, outputAssembly) =
     let contents = readAllText path in
-        let (program, _) = buildProgramToAssembly contents in
+        let (program, _) = buildProgramToAssembly (contents, debug) in
             let outputName = Option.defaultValue (asTitleCase (Path.GetFileNameWithoutExtension path) + ".dll") outputAssembly
             writeAssemblyToFile (program, outputName)
 
 /// Builds the brainfuck program passed as a string.
-let buildProgram (contents, outputAssembly) =
-    let (program, _) = buildProgramToAssembly contents in
+let buildProgram (contents, debug, outputAssembly) =
+    let (program, _) = buildProgramToAssembly (contents, debug) in
         let outputName = Option.defaultValue "Output.dll" outputAssembly
         writeAssemblyToFile (program, outputName)
 
@@ -452,10 +453,10 @@ let main argv =
     match result with
     | :? CommandLine.Parsed<Options> as parsed ->
         match (parsed.Value.File, parsed.Value.Program, parsed.Value.Build) with
-        | (Some path, None, false) -> executeProgramInFile(path); 0
-        | (Some path, None, true) -> buildProgramInFile(path, parsed.Value.Output); 0
-        | (None, Some program, false) -> executeProgram(program); 0
-        | (None, Some program, true) -> buildProgram(program, parsed.Value.Output); 0
+        | (Some path, None, false) -> executeProgramInFile(path, parsed.Value.Debug); 0
+        | (Some path, None, true) -> buildProgramInFile(path, parsed.Value.Debug, parsed.Value.Output); 0
+        | (None, Some program, false) -> executeProgram(program, parsed.Value.Debug); 0
+        | (None, Some program, true) -> buildProgram(program, parsed.Value.Debug, parsed.Value.Output); 0
         | (Some _, Some _, _) -> raise (InvalidOptionsException("brainiac: can not specify both file path and input program, must use one or the other!"))
         | (None, None, _) -> raise (InvalidOptionsException("brainiac: did not specify either input file path with: -f some_file.bf or input program with: -i '++++.', please specify one! use the --help!"))
     | _ -> 1 // nonzero return as to indicate error
