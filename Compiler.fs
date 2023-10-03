@@ -214,17 +214,20 @@ type CompilationContext = {
     Scopes: list<Scope> // a list of scopes for the conditional jumps, with associated created labels and offsets for each into the original instruction stream
     StackPointerOffset: int // local index on the stack where the stack pointer lives
     MemoryStackOffset: int // local index on the stack where the memory array lives
+    KeyStackOffset: int // Local index on the stack where the last key info lives
 }
 
 /// Builds the program passed in the string to a dynamic assembly.
 let buildProgramToAssembly (contents, debug) =
 
-    let memorySize: int = 65536;
+    let memorySize: int = 65536 * 4; // make for 256KB of memory space by default, this might be a lot but big brainfuck programs do be kinda crazy, ideally we should auto-resize when we hit the edge of our memory space
     let memoryArrayType: Type = typeof<array<byte>>
     let memoryType: Type = typeof<byte>
 
     let stackPointerValue: int = 0;
     let stackPointerType: Type = typeof<int>
+
+    let keyType: Type = typeof<ConsoleKeyInfo>
 
     let optimizedProgram = optimizeProgram(contents)
 
@@ -255,6 +258,7 @@ let buildProgramToAssembly (contents, debug) =
         // emit definitions for our two locals, must be declared upfront
         let memory = generator.DeclareLocal(memoryArrayType)
         let stack = generator.DeclareLocal(stackPointerType)
+        let key = generator.DeclareLocal(keyType)
 
         // emit definitions for all of our labels
         let ctx: CompilationContext = compileBrackets (
@@ -263,7 +267,8 @@ let buildProgramToAssembly (contents, debug) =
                 Current = 0;
                 Scopes = [];
                 StackPointerOffset = stack.LocalIndex;
-                MemoryStackOffset = memory.LocalIndex
+                MemoryStackOffset = memory.LocalIndex;
+                KeyStackOffset = key.LocalIndex
             },
             instructions
         )
@@ -324,6 +329,23 @@ let buildProgramToAssembly (contents, debug) =
         generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
         generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
         generator.Emit(OpCodes.Ldc_I4, value)
+        generator.Emit(OpCodes.Stelem_I1)
+    
+    let compileInput (generator: ILGenerator, ctx: CompilationContext) =
+        let readKeyParams = [||]
+        let readKeyMethodInfo = typeof<Console>.GetMethod("ReadKey", readKeyParams)
+        let readKeyGetKeyMethodInfo = typeof<ConsoleKeyInfo>.GetProperty("KeyChar").GetMethod
+
+        // first we call readkey, and load memory and stack pointer into memory
+        generator.Emit(OpCodes.Ldloc, ctx.MemoryStackOffset)
+        generator.Emit(OpCodes.Ldloc, ctx.StackPointerOffset)
+        generator.EmitCall(OpCodes.Call, readKeyMethodInfo, null)
+
+        // then we get the actual key underneath from the property, first we must put the key info on the stack though
+        generator.Emit(OpCodes.Stloc, ctx.KeyStackOffset)
+        generator.Emit(OpCodes.Ldloca_S, ctx.KeyStackOffset)
+        generator.EmitCall(OpCodes.Call, readKeyGetKeyMethodInfo, null)
+        generator.Emit(OpCodes.Conv_U1)
         generator.Emit(OpCodes.Stelem_I1)
 
     let compileOutput (generator: ILGenerator, ctx: CompilationContext) =
@@ -386,6 +408,7 @@ let buildProgramToAssembly (contents, debug) =
             compileSet(generator, ctx, v)
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | Input::xs ->
+            compileInput(generator, ctx)
             compile(generator, { ctx with Current = ctx.Current + 1 }, xs)
         | Output::xs ->
             compileOutput(generator, ctx)
