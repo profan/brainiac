@@ -448,7 +448,7 @@ let executeProgramInFile (path, debug) =
 
 /// Returns the string in title case, in our case we use it just for assembly names.
 let asTitleCase str =
-    System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase str
+    CultureInfo.InvariantCulture.TextInfo.ToTitleCase str
 
 /// Builds the brainfuck program in the file at the path.
 let buildProgramInFile (path, debug, outputAssembly) =
