@@ -5,9 +5,11 @@ brainiac
 Some simple optimizations are also applied in the process, some of which are the same as in my [old brainfuck interpreter in C](https://github.com/profan/yet-another-brainfuck-interpreter), but this time the optimizations actually compose much better... and the optimization pass code is a lot easier to read because it's not written in C.
 
 # General Details
-* Uses a 65536 cell space by default.
+* Uses a 65536 * 4 cell space by default.
 * Uses (unsigned) byte cells, wrapping on overflow.
-* Includes a special '#' instruction to dump the contents of all 65536 cells in a 16 column format, with a newline between each cell printed (as a number, not as a character).
+* ~~Includes a special '#' instruction to dump the contents of all 65536 cells in a 16 column format, with a newline between each cell printed (as a number, not as a character).~~ (TODO)
+* Can directly execute your program, or optionally builds it to a .NET assembly and writes it to file.
+  * Reads your program from an input string (the --input flag) or from file (with the --file flag).
 * Accepts an unbounded input program size.
 
 # Compilation Details
